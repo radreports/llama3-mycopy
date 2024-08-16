@@ -7,7 +7,9 @@
 <br>
 
 ---
-
+##
+torchrun --nproc_per_node 1 flask_chat.py     --ckpt_dir /home/ubuntu/.llama/checkpoints/Meta-Llama3.1-8B-Instruct/     --tokenizer_path /home/ubuntu/.llama/checkpoints/Meta-Llama3.1-8B-Instruct/tokenizer.model     --max_seq_len 512 --max_batch_size 6
+##
 ## **Note of deprecation**
 
 Thank you for developing with Llama models. As part of the Llama 3.1 release, we’ve consolidated GitHub repos and added some additional repos as we’ve expanded Llama’s functionality into being an e2e Llama Stack. Please use the following repos going forward:
