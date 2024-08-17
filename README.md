@@ -8,7 +8,7 @@
 
 ---
 ##
-torchrun --nproc_per_node 1 flask_chat.py     --ckpt_dir /home/ubuntu/.llama/checkpoints/Meta-Llama3.1-8B-Instruct/     --tokenizer_path /home/ubuntu/.llama/checkpoints/Meta-Llama3.1-8B-Instruct/tokenizer.model     --max_seq_len 512 --max_batch_size 6
+torchrun --nproc_per_node 1 App.py     --ckpt_dir /home/ubuntu/.llama/checkpoints/Meta-Llama3.1-8B-Instruct/     --tokenizer_path /home/ubuntu/.llama/checkpoints/Meta-Llama3.1-8B-Instruct/tokenizer.model     --max_seq_len 512 --max_batch_size 6
 ##
 ## **Note of deprecation**
 
