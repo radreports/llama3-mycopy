@@ -6,6 +6,9 @@
         🤗 <a href="https://huggingface.co/meta-Llama"> Models on Hugging Face</a>&nbsp | <a href="https://ai.meta.com/blog/"> Blog</a>&nbsp |  <a href="https://llama.meta.com/">Website</a>&nbsp | <a href="https://llama.meta.com/get-started/">Get Started</a>&nbsp
 <br>
 
+##
+https://github.com/meta-llama/llama3
+##
 ---
 ##
 torchrun --nproc_per_node 1 App.py     --ckpt_dir /home/ubuntu/.llama/checkpoints/Meta-Llama3.1-8B-Instruct/     --tokenizer_path /home/ubuntu/.llama/checkpoints/Meta-Llama3.1-8B-Instruct/tokenizer.model     --max_seq_len 512 --max_batch_size 6
