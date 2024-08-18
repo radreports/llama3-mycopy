@@ -150,8 +150,6 @@ def shutdown():
 
 @app.route('/audio', methods=['POST'])
 def audio():
-    print(request)
-
     if 'audio' not in request.files:
         return jsonify({"error": "No file part"}), 400
 
@@ -172,10 +170,32 @@ def audio():
     options = whisper.DecodingOptions()
     result = whisper.decode(model, mel, options)
     
-    # print the recognized text
-    print(result.text)
-    return jsonify({"extracted_text": result.text}), 200
-    
+    # Extracted text from audio
+    extracted_text = result.text
+    print(f"Extracted Text: {extracted_text}")
+
+    # Prepare the dialog for LLaMA
+    history = [("user", extracted_text)]
+    dialog = [{"role": role, "content": message} for role, message in history]
+
+    # Generate LLaMA response
+    results = generator.chat_completion(
+        [dialog],
+        max_gen_len=512,
+        temperature=0.6,
+        top_p=0.9,
+    )
+    llama_response = results[0]['generation']['content']
+
+    # Add LLaMA response to history
+    history.append(("RadAssistant", llama_response))
+
+    return jsonify({
+        "extracted_text": extracted_text,
+        "llama_response": llama_response,
+        "history": history
+    }), 200
+
 
 if __name__ == '__main__':
     # Initialization settings
