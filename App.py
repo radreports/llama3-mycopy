@@ -14,11 +14,12 @@ import cv2
 import numpy as np
 from pdf2image import convert_from_path, convert_from_bytes
 import tempfile
-
+import whisper
 
 app = Flask(__name__)
 CORS(app)
 generator = None
+model = whisper.load_model("medium")
 
 if not os.path.isdir("./trash_me"):
     os.mkdir("./trash_me")
@@ -59,6 +60,13 @@ def chat():
     temperature = data.get('temperature', 0.6)
     top_p = data.get('top_p', 0.9)
     max_gen_len = data.get('max_gen_len', None)
+    system_prompt = {
+        "role": "system",
+        "content": "You are RadAssist, an AI Radiology assistant specialized in providing information and assistance regarding Healthcare. Always respond as RadAssist."
+    }
+    if len(history) == 0:
+        history.append(("system", system_prompt['content']))
+    
 
     # Add user input to the history
     history.append(("user", user_input))
@@ -97,20 +105,22 @@ def extract_text():
         image = Image.open(file)
         image = np.array(image)
         preprocessed_image = preprocess_image(image)
+        custom_config = r'--oem 1 --psm 3'
         lang = 'eng+tel+hin'
-        extracted_text = pytesseract.image_to_string(preprocessed_image, lang=lang)
+        extracted_text = pytesseract.image_to_string(preprocessed_image, config=custom_config, lang=lang)
         
 
     elif file_ext == '.pdf':
         outDir = tempfile.TemporaryDirectory(dir="./trash_me")
         file.save(outDir.name + "/test.pdf")
-        pages = convert_from_path(outDir.name +"/test.pdf" )
+        pages = convert_from_path(outDir.name +"/test.pdf", fmt='png' )
         text_data = ''
         for page in pages:
-            image = Image.open(file)
-            image = np.array(image)
+            # print(type(page))
+            # image = Image.open(page)
+            image = np.array(page)
             
-            text = pytesseract.image_to_string(page)
+            # text = pytesseract.image_to_string(page)
             preprocessed_image = preprocess_image(image)
             lang = 'eng+tel+hin'
             text = pytesseract.image_to_string(preprocessed_image, lang=lang)
@@ -138,12 +148,41 @@ def shutdown():
         dist.destroy_process_group()
     return jsonify({"status": "Process group destroyed"}), 200
 
+@app.route('/audio', methods=['POST'])
+def audio():
+    print(request)
+
+    if 'audio' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+
+    file = request.files['audio']
+    outDir = tempfile.TemporaryDirectory(dir="./trash_me")
+    file.save(outDir.name + "/test.mp3")
+    audio = whisper.load_audio(outDir.name + "/test.mp3")
+    audio = whisper.pad_or_trim(audio)
+    
+    # make log-Mel spectrogram and move to the same device as the model
+    mel = whisper.log_mel_spectrogram(audio).to(model.device)
+    
+    # detect the spoken language
+    _, probs = model.detect_language(mel)
+    print(f"Detected language: {max(probs, key=probs.get)}")
+    
+    # decode the audio
+    options = whisper.DecodingOptions()
+    result = whisper.decode(model, mel, options)
+    
+    # print the recognized text
+    print(result.text)
+    return jsonify({"extracted_text": result.text}), 200
+    
+
 if __name__ == '__main__':
     # Initialization settings
     ckpt_dir = "/home/ubuntu/.llama/checkpoints/Meta-Llama3.1-8B-Instruct/"
     tokenizer_path = "/home/ubuntu/.llama/checkpoints/Meta-Llama3.1-8B-Instruct/tokenizer.model"
     max_seq_len = 8192  # You can adjust this as needed
-    max_batch_size = 4
+    max_batch_size = 6
 
     # Initialize the generator on startup
     generator = setup_generator(ckpt_dir, tokenizer_path, max_seq_len, max_batch_size)
