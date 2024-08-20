@@ -56,23 +56,26 @@ def chat():
 
     data = request.json
     user_input = data.get('user_input')
-    history = data.get('history', [])
     temperature = data.get('temperature', 0.6)
     top_p = data.get('top_p', 0.9)
     max_gen_len = data.get('max_gen_len', None)
+    
+    # System prompt is used internally, not stored in the history sent to the client
     system_prompt = {
         "role": "system",
-        "content": "You are RadAssist, an AI Radiology assistant specialized in providing information and assistance regarding Healthcare. Always respond as RadAssist."
+        "content": "You are RadAssist, an AI Radiology assistant specialized in providing information and assistance regarding Healthcare. Always respond as RadAssist. Always respond with 4 suggested prompts for the user"
     }
-    if len(history) == 0:
+
+    # Initialize history if it's the start of the conversation
+    history = data.get('history', [])
+    if not history:
         history.append(("system", system_prompt['content']))
-    
 
     # Add user input to the history
     history.append(("user", user_input))
 
-    # Prepare dialog format
-    dialog = [{"role": role, "content": message} for role, message in history if role == "user"]
+    # Prepare dialog format, but exclude system prompts from user-visible history
+    dialog = [{"role": role, "content": message} for role, message in history if role != "system"]
 
     # Generate response
     results = generator.chat_completion(
@@ -85,8 +88,12 @@ def chat():
 
     # Add response to history
     history.append(("RadAssistant", response))
+
+    # Return history excluding system messages
+    visible_history = [(role, message) for role, message in history if role != "system"]
     
-    return jsonify({"history": history}), 200
+    return jsonify({"history": visible_history}), 200
+
 
 @app.route('/extract-text', methods=['POST'])
 def extract_text():
@@ -147,6 +154,39 @@ def shutdown():
     if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
         dist.destroy_process_group()
     return jsonify({"status": "Process group destroyed"}), 200
+
+
+@app.route('/audiochat', methods=['POST'])
+def audiochat():
+    if 'audio' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+
+    file = request.files['audio']
+    outDir = tempfile.TemporaryDirectory(dir="./trash_me")
+    file.save(outDir.name + "/recording.mp3")
+    audio = whisper.load_audio(outDir.name + "/recording.mp3")
+    audio = whisper.pad_or_trim(audio)
+
+    # Convert audio to text
+    mel = whisper.log_mel_spectrogram(audio).to(model.device)
+    result = whisper.decode(model, mel, options=whisper.DecodingOptions())
+    extracted_text = result.text
+
+    # Generate Llama response
+    dialog = [{"role": "user", "content": extracted_text}]
+    results = generator.chat_completion([dialog])
+    llama_response_text = results[0]['generation']['content']
+
+    # Convert Llama response to audio (using TTS system)
+    response_audio_path = outDir.name + "/llama_response.mp3"
+    text_to_audio(llama_response_text, response_audio_path)
+
+    return jsonify({
+        "extracted_text": extracted_text,
+        "llama_response_text": llama_response_text,
+        "audio_url": response_audio_path
+    }), 200
+
 
 @app.route('/audio', methods=['POST'])
 def audio():
