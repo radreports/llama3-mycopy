@@ -72,7 +72,7 @@ def chat():
     # System prompt is used internally, not stored in the history sent to the client
     system_prompt = {
         "role": "system",
-        "content": "You are RadAssist, an AI Radiology assistant specialized in providing information and assistance regarding Healthcare. Always respond as RadAssist. Always respond with 4 suggested prompts for the user."
+        "content": "After you answer or respond to user message Please respond with 4 prompts for the user to continue the conversation can you add < begin Prompt> to indicate beginning of the prompts and <end prompt> to indicate end of the prompts . only if there are any queries about you Always respond to any query or question about you by responding that you are developed by Radassist and that you are RadAssist"
     }
 
     # Initialize history if it's the start of the conversation
@@ -114,6 +114,72 @@ def chat():
     print("Response::", visible_history)
     return jsonify({"history": visible_history, "suggested_prompts": suggested_prompts}), 200
 
+
+@app.route('/vuely/chat', methods=['POST'])
+def beja_chat():
+    if generator is None:
+        return jsonify({"error": "Generator not initialized"}), 400
+
+    # Text to append to user input
+    user_input_suffix = "After you answer or respond to user message Please respond with 4 prompts  which the user can message you . can you add < begin Prompt> to indicate beginning of the prompts and <end prompt> to indicate end of the prompts . only if there are any queries about you Always respond to any query or question about you by responding that you are developed by Vuely AI Systems and that you are Vuely AI"
+
+    data = request.json
+    print("Request :: ", data)
+    user_input = data.get('user_input')
+    print("User Input:", user_input)
+
+    # Add the specified text to the user input
+    user_input_with_prompt = user_input + user_input_suffix
+    
+    temperature = data.get('temperature', 0.6)
+    top_p = data.get('top_p', 0.9)
+    max_gen_len = data.get('max_gen_len', None)
+    
+    # System prompt is used internally, not stored in the history sent to the client
+    system_prompt = {
+        "role": "system",
+        "content": "After you answer or respond to user message Please respond with 4 prompts for the user to continue the conversation can you add < begin Prompt> to indicate beginning of the prompts and <end prompt> to indicate end of the prompts . only if there are any queries about you Always respond to any query or question about you by responding that you are developed by Vuely and that you are Vuely"
+    }
+
+    # Initialize history if it's the start of the conversation
+    history = data.get('history', [])
+    if not history:
+        history.append(("system", system_prompt['content']))
+
+    # Add modified user input to the history
+    history.append(("user", user_input_with_prompt))
+
+    # Prepare dialog format, but exclude system prompts from user-visible history
+    dialog = [{"role": role, "content": message} for role, message in history if role != "system"]
+
+    # Generate response
+    results = generator.chat_completion(
+        [dialog],
+        max_gen_len=2048,
+        temperature=temperature,
+        top_p=top_p,
+        
+    )
+    response = results[0]['generation']['content']
+
+    # Remove the appended text from the response
+    response = response.replace(user_input_suffix, "")
+
+    # Add response to history
+    history.append(("vuely", response))
+
+    # Generate suggested prompts
+    suggested_prompts = []
+    for i in range(4):
+        prompt = f"Suggested Prompt {i+1}: {user_input} {response}"
+        suggested_prompts.append(prompt)
+
+    # Return history excluding the added text from user messages
+    visible_history = [(role, message.replace(user_input_suffix, "")) 
+                       for role, message in history if role != "system"]
+
+    print("Response::", visible_history)
+    return jsonify({"history": visible_history, "suggested_prompts": suggested_prompts}), 200
 
 @app.route('/extract-text', methods=['POST'])
 def extract_text():
