@@ -15,6 +15,7 @@ import numpy as np
 from pdf2image import convert_from_path, convert_from_bytes
 import tempfile
 import whisper
+from gevent.pywsgi import WSGIServer
 
 app = Flask(__name__)
 CORS(app)
@@ -114,6 +115,79 @@ def chat():
     print("Response::", visible_history)
     return jsonify({"history": visible_history, "suggested_prompts": suggested_prompts}), 200
 
+@app.route('/vuely/chat2', methods=['POST'])
+def vuely_chat():
+    if generator is None:
+        return jsonify({"error": "Generator not initialized"}), 400
+
+    # Text to append to user input
+    user_input_suffix = "After you answer or respond to user message Please respond with 4 prompts which the user can message you. Can you add <begin Prompt> to indicate beginning of the prompts and <end prompt> to indicate end of the prompts. Only if there are any queries about you, always respond to any query or question about you by responding that you are developed by Vuely AI Systems and that you are Vuely AI."
+
+    data = request.json
+    print("Request :: ", data)
+    user_input = data.get('user_input')
+    print("User Input:", user_input)
+
+    # Add the specified text to the user input
+    user_input_with_prompt = user_input + user_input_suffix
+    
+    temperature = data.get('temperature', 0.6)
+    top_p = data.get('top_p', 0.9)
+    max_gen_len = data.get('max_gen_len', None)
+    
+    # System prompt for tool usage
+    system_prompt = {
+        "role": "system",
+        "content": (
+            "<|start_tag|>system<|end_tag|>\n"
+            "Environment: ipython\n"
+            "Tools: brave_search\n"
+            "Cutting Knowledge Date: December 2023\n"
+            "Today Date: 23 July 2024\n\n"
+            "# Tool Instructions\n"
+            "- Use 'brave_search' to perform web searches.\n"
+        )
+    }
+
+    # Initialize history if it's the start of the conversation
+    history = data.get('history', [])
+    if not history:
+        history.append(("system", system_prompt['content']))
+
+    # Add modified user input to the history
+    history.append(("user", user_input_with_prompt))
+
+    # Prepare dialog format, excluding system prompts from user-visible history
+    dialog = [{"role": role, "content": message} for role, message in history if role != "system"]
+
+    # Generate response with tool calling
+    results = generator.chat_completion(
+        [dialog],
+        max_gen_len=2048,
+        temperature=temperature,
+        top_p=top_p
+    )
+    response = results[0]['generation']['content']
+
+    # Remove the appended text from the response
+    response = response.replace(user_input_suffix, "")
+
+    # Add response to history
+    history.append(("vuely", response))
+
+    # Generate suggested prompts
+    suggested_prompts = []
+    for i in range(4):
+        prompt = f"Suggested Prompt {i+1}: {user_input} {response}"
+        suggested_prompts.append(prompt)
+
+    # Return history excluding the added text from user messages
+    visible_history = [(role, message.replace(user_input_suffix, "")) 
+                       for role, message in history if role != "system"]
+
+    print("Response::", visible_history)
+    return jsonify({"history": visible_history, "suggested_prompts": suggested_prompts}), 200
+
 
 @app.route('/vuely/chat', methods=['POST'])
 def beja_chat():
@@ -138,7 +212,91 @@ def beja_chat():
     # System prompt is used internally, not stored in the history sent to the client
     system_prompt = {
         "role": "system",
-        "content": "After you answer or respond to user message Please respond with 4 prompts for the user to continue the conversation can you add < begin Prompt> to indicate beginning of the prompts and <end prompt> to indicate end of the prompts . only if there are any queries about you Always respond to any query or question about you by responding that you are developed by Vuely and that you are Vuely"
+        "content": """
+After you answer or respond to the user's message, please respond with 4 followup prompts the user can send you. 
+Use <begin Prompt> at the beginning of all the prompts and <end Prompt> to indicate the end of all the prompts.
+If there are any queries about you, always respond by saying that you are developed by Vuely and that you are Vuely.
+For any user queries for latest information execute curl -s --compressed "$https://api.search.brave.com/res/v1/web/search?q={search_term}" \
+  -H "Accept: application/json" \
+  -H "Accept-Encoding: gzip" \
+  -H "X-Subscription-Token: BSASlj3P-4CE5L5Vqa7EslZCR5lfY2z" , replace {search_term} with user input and return results
+"""
+    }
+
+    # Initialize history if it's the start of the conversation
+    history = data.get('history', [])
+    if not history:
+        history.append(("system", system_prompt['content']))
+
+    # Add modified user input to the history
+    history.append(("user", user_input_with_prompt))
+
+    # Prepare dialog format, but exclude system prompts from user-visible history
+    dialog = [{"role": role, "content": message} for role, message in history if role != "system"]
+
+    # Generate response
+    results = generator.chat_completion(
+        [dialog],
+        max_gen_len=2048,
+        temperature=temperature,
+        top_p=top_p,
+        
+        
+    )
+    response = results[0]['generation']['content']
+
+    # Remove the appended text from the response
+    response = response.replace(user_input_suffix, "")
+
+    # Add response to history
+    history.append(("vuely", response))
+
+    # Generate suggested prompts
+    suggested_prompts = []
+    for i in range(4):
+        prompt = f"Suggested Prompt {i+1}: {user_input} {response}"
+        suggested_prompts.append(prompt)
+
+    # Return history excluding the added text from user messages
+    visible_history = [(role, message.replace(user_input_suffix, "")) 
+                       for role, message in history if role != "system"]
+
+    print("Response::", visible_history)
+    return jsonify({"history": visible_history, "suggested_prompts": suggested_prompts}), 200
+
+
+@app.route('/hub/chat', methods=['POST'])
+def hub_chat():
+    if generator is None:
+        return jsonify({"error": "Generator not initialized"}), 400
+
+    # Text to append to user input
+    user_input_suffix = "After you answer or respond to user message Please respond with 4 prompts  which the user can message you . can you add < begin Prompt> to indicate beginning of the prompts and <end prompt> to indicate end of the prompts . only if there are any queries about you Always respond to any query or question about you by responding that you are developed by Vuely AI Systems and that you are Vuely AI"
+
+    data = request.json
+    print("Request :: ", data)
+    user_input = data.get('user_input')
+    print("User Input:", user_input)
+
+    # Add the specified text to the user input
+    user_input_with_prompt = user_input + user_input_suffix
+    
+    temperature = data.get('temperature', 0.6)
+    top_p = data.get('top_p', 0.9)
+    max_gen_len = data.get('max_gen_len', None)
+    
+    # System prompt is used internally, not stored in the history sent to the client
+    system_prompt = {
+        "role": "system",
+        "content": """
+After you answer or respond to the user's message, please respond with 4 followup prompts the user can send you. 
+Use <begin Prompt> at the beginning of all the prompts and <end Prompt> to indicate the end of all the prompts.
+If there are any queries about you, always respond by saying that you are developed by Vuely and that you are Vuely.
+For any user queries for latest information execute curl -s --compressed "$https://api.search.brave.com/res/v1/web/search?q={search_term}" \
+  -H "Accept: application/json" \
+  -H "Accept-Encoding: gzip" \
+  -H "X-Subscription-Token: BSASlj3P-4CE5L5Vqa7EslZCR5lfY2z" , replace {search_term} with user input and return results
+"""
     }
 
     # Initialize history if it's the start of the conversation
@@ -180,6 +338,7 @@ def beja_chat():
 
     print("Response::", visible_history)
     return jsonify({"history": visible_history, "suggested_prompts": suggested_prompts}), 200
+
 
 @app.route('/extract-text', methods=['POST'])
 def extract_text():
@@ -335,4 +494,7 @@ if __name__ == '__main__':
     print("LLaMA generator initialized.")
 
     # Start the Flask app
-    app.run(host='0.0.0.0', port=7860)
+    # app.run(host='0.0.0.0', port=7860)
+
+    http_server = WSGIServer(('0.0.0.0', 7860), app)
+    http_server.serve_forever()
